@@ -4,6 +4,25 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 
+    <!-- مطلوب لـ Android 11+ لفتح روابط واتساب وروابط خارجية -->
+    <queries>
+        <!-- واتساب عبر رابط wa.me (متصفح → واتساب) -->
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="https" android:host="wa.me" />
+        </intent>
+        <!-- واتساب عبر deep link مباشر -->
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="whatsapp" />
+        </intent>
+        <!-- المتصفح الخارجي -->
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="https" />
+        </intent>
+    </queries>
+
     <application
         android:label="القوافل التعليمية"
         android:name="${applicationName}"
