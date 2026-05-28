@@ -102,6 +102,23 @@ class _WebViewLessonScreenState extends ConsumerState<WebViewLessonScreen> {
           },
           onPageFinished: (_) {
             if (mounted) setState(() => _loading = false);
+            // اعترض نقرات روابط واتساب قبل أن يحاول WebView تحميلها
+            _ctrl?.runJavaScript(
+              '(function(){'
+              '  document.addEventListener("click", function(e){'
+              '    var el = e.target.closest ? e.target.closest("a[href]") : null;'
+              '    if (!el) return;'
+              '    var href = el.getAttribute("href") || "";'
+              '    var isWa = href.indexOf("whatsapp://") === 0'
+              '             || href.indexOf("https://wa.me") === 0'
+              '             || href.indexOf("http://wa.me") === 0;'
+              '    if (isWa) {'
+              '      e.preventDefault(); e.stopPropagation();'
+              '      if (window.WaChannel) { window.WaChannel.postMessage(href); }'
+              '    }'
+              '  }, true);'
+              '})();'
+            );
           },
           onWebResourceError: (e) {
             // تجاهل أخطاء sub-resources (fonts/icons) — أبلّغ فقط عن الصفحة الرئيسية
@@ -117,12 +134,27 @@ class _WebViewLessonScreenState extends ConsumerState<WebViewLessonScreen> {
             // ── روابط واتساب: افتح خارجياً (متصفح → واتساب) ──────────────
             // wa.me  → رابط ويب رسمي يُحوَّل تلقائياً لفتح واتساب
             // whatsapp:// → deep link مباشر لتطبيق واتساب
-            final isWhatsApp = host == 'wa.me' ||
-                host.endsWith('.wa.me') ||
-                scheme == 'whatsapp';
+            // whatsapp:// يسبب ERR_UNKNOWN_URL_SCHEME داخل WebView
+            // الحل: حوّله إلى https://wa.me ثم افتحه في المتصفح الخارجي
+            final isWhatsApp = scheme == 'whatsapp' ||
+                host == 'wa.me' ||
+                host.endsWith('.wa.me');
 
             if (isWhatsApp && uri != null) {
-              launchUrl(uri, mode: LaunchMode.externalApplication);
+              Uri launchUri = uri;
+              if (scheme == 'whatsapp') {
+                final phone = uri.queryParameters['phone'] ?? '';
+                final text  = uri.queryParameters['text'] ?? '';
+                if (phone.isNotEmpty) {
+                  final encoded = Uri.encodeComponent(text);
+                  launchUri = Uri.parse(
+                    text.isNotEmpty
+                        ? 'https://wa.me/$phone?text=$encoded'
+                        : 'https://wa.me/$phone',
+                  );
+                }
+              }
+              launchUrl(launchUri, mode: LaunchMode.externalApplication);
               return NavigationDecision.prevent;
             }
 
@@ -157,6 +189,7 @@ class _WebViewLessonScreenState extends ConsumerState<WebViewLessonScreen> {
       )
       ..addJavaScriptChannel('AppChannel',  onMessageReceived: _onVideoEvent)
       ..addJavaScriptChannel('VideoEvents', onMessageReceived: _onVideoEvent)
+      ..addJavaScriptChannel('WaChannel',   onMessageReceived: _onWaLink)
       // تحميل الدرس بدون Authorization header — التوكن في الـ URL
       ..loadRequest(Uri.parse(lessonUrl));
 
@@ -186,6 +219,33 @@ class _WebViewLessonScreenState extends ConsumerState<WebViewLessonScreen> {
   // ─────────────────────────────────────────────────────────────────────────
   // أحداث الفيديو من Plyr عبر JavaScript channel
   // ─────────────────────────────────────────────────────────────────────────
+  // اعتراض روابط واتساب من JavaScript وفتحها في المتصفح الخارجي
+  void _onWaLink(JavaScriptMessage msg) {
+    final href = msg.message;
+    Uri? uri;
+
+    if (href.startsWith('whatsapp://')) {
+      // حوّل whatsapp://send/?phone=X إلى https://wa.me/X
+      final raw = Uri.tryParse(href);
+      final phone = raw?.queryParameters['phone'] ?? '';
+      final text  = raw?.queryParameters['text'] ?? '';
+      if (phone.isNotEmpty) {
+        final encoded = Uri.encodeComponent(text);
+        uri = Uri.parse(
+          text.isNotEmpty
+              ? 'https://wa.me/$phone?text=$encoded'
+              : 'https://wa.me/$phone',
+        );
+      }
+    } else {
+      uri = Uri.tryParse(href);
+    }
+
+    if (uri != null) {
+      launchUrl(uri, mode: LaunchMode.externalApplication);
+    }
+  }
+
   void _onVideoEvent(JavaScriptMessage msg) {
     final data = msg.message;
 
