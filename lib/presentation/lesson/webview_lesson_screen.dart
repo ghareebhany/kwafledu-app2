@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 import 'package:webview_flutter_android/webview_flutter_android.dart';
 import '../../core/constants/api_constants.dart';
@@ -109,10 +110,29 @@ class _WebViewLessonScreenState extends ConsumerState<WebViewLessonScreen> {
             }
           },
           onNavigationRequest: (req) {
-            final uri  = Uri.tryParse(req.url);
-            final host = uri?.host ?? '';
+            final uri    = Uri.tryParse(req.url);
+            final scheme = uri?.scheme ?? '';
+            final host   = uri?.host ?? '';
 
-            // السماح بكل طلبات الموقع وموفّري الفيديو والأصول
+            // ── روابط واتساب: افتح خارجياً (متصفح → واتساب) ──────────────
+            // wa.me  → رابط ويب رسمي يُحوَّل تلقائياً لفتح واتساب
+            // whatsapp:// → deep link مباشر لتطبيق واتساب
+            final isWhatsApp = host == 'wa.me' ||
+                host.endsWith('.wa.me') ||
+                scheme == 'whatsapp';
+
+            if (isWhatsApp && uri != null) {
+              launchUrl(uri, mode: LaunchMode.externalApplication);
+              return NavigationDecision.prevent;
+            }
+
+            // ── روابط tel / mailto: افتحها بتطبيقها الطبيعي ──────────────
+            if ((scheme == 'tel' || scheme == 'mailto') && uri != null) {
+              launchUrl(uri, mode: LaunchMode.externalApplication);
+              return NavigationDecision.prevent;
+            }
+
+            // ── السماح بكل طلبات الموقع وموفّري الفيديو والأصول ──────────
             const allowed = [
               'kwafledu.com',
               'youtube.com',
